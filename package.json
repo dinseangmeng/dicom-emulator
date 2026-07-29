@@ -1,0 +1,15 @@
+{
+  "name": "dicom-modality-emulator",
+  "version": "3.0.0",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "download": "node download-samples.js"
+  },
+  "dependencies": {
+    "dcmjs-dimse": "^0.3.3",
+    "express": "^4.18.2",
+    "uuid": "^9.0.0"
+  }
+}

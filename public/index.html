@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DICOM Emulator</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f1117;
+  --card: #1a1d27;
+  --card2: #21253a;
+  --border: #2e3250;
+  --teal: #2dd4bf;
+  --teal2: #0f766e;
+  --green: #4ade80;
+  --red: #f87171;
+  --yellow: #fbbf24;
+  --blue: #60a5fa;
+  --orange: #fb923c;
+  --purple: #a78bfa;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* TOP BAR */
+.topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: center; gap: 14px; height: 52px; flex-shrink: 0; }
+.topbar-logo { font-size: 20px; }
+.topbar-title { font-weight: 700; font-size: 15px; }
+.topbar-sub { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+.spacer { flex: 1; }
+.btn-config { padding: 6px 14px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.btn-config:hover { border-color: var(--teal); color: var(--teal); }
+
+/* CONFIG MODAL */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 100; display: none; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--card); border: 1px solid var(--border); border-radius: 10px; width: 520px; max-width: 95vw; }
+.modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+.modal-head h2 { font-size: 14px; font-weight: 700; flex: 1; }
+.modal-close { background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; line-height: 1; padding: 2px 6px; border-radius: 4px; }
+.modal-close:hover { color: var(--text); background: var(--card2); }
+.modal-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+
+.cfg-block { border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.cfg-block-head { padding: 8px 14px; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; }
+.cfg-block-head .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.cfg-block-body { padding: 12px 14px; display: grid; grid-template-columns: 1fr 100px 1fr; gap: 10px; background: var(--card2); }
+.cfg-field label { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.cfg-field input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 7px 10px; color: var(--text); font-size: 12px; font-family: var(--mono); outline: none; }
+.cfg-field input:focus { border-color: var(--teal); }
+
+.calling-row { border-top: 1px solid var(--border); padding: 12px 14px; background: var(--card2); display: flex; align-items: center; gap: 10px; }
+.calling-row label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.calling-row input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 7px 10px; color: var(--text); font-size: 12px; font-family: var(--mono); outline: none; }
+.calling-row input:focus { border-color: var(--teal); }
+
+.btn-save { padding: 8px 20px; border-radius: 6px; border: none; background: var(--teal); color: #0f1117; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.btn-cancel { padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; font-family: inherit; }
+.btn-cancel:hover { color: var(--text); }
+
+/* STATUS BADGES in topbar */
+.conn-badges { display: flex; gap: 6px; }
+.conn-badge { font-size: 10px; font-family: var(--mono); padding: 3px 8px; border-radius: 4px; border: 1px solid; display: flex; align-items: center; gap: 4px; }
+.conn-badge.mwl  { border-color: rgba(96,165,250,.4); color: var(--blue); background: rgba(96,165,250,.08); }
+.conn-badge.mpps { border-color: rgba(251,146,60,.4); color: var(--orange); background: rgba(251,146,60,.08); }
+.conn-badge.store{ border-color: rgba(167,139,250,.4); color: var(--purple); background: rgba(167,139,250,.08); }
+
+/* MAIN LAYOUT */
+.body { display: flex; flex: 1; overflow: hidden; }
+
+/* LEFT: worklist */
+.left { width: 500px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+.section-head { padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.section-head h2 { font-size: 13px; font-weight: 600; flex: 1; }
+.filters { padding: 8px 12px; background: var(--card2); border-bottom: 1px solid var(--border); display: flex; gap: 6px; flex-shrink: 0; }
+.filters input { background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; color: var(--text); font-size: 12px; outline: none; }
+.filters input:focus { border-color: var(--teal); }
+.btn-sm { padding: 6px 12px; border-radius: 5px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.btn-refresh { background: var(--teal); color: #0f1117; }
+.wl-list { flex: 1; overflow-y: auto; }
+.wl-row { padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .1s; display: flex; gap: 12px; align-items: center; }
+.wl-row:hover { background: var(--card2); }
+.wl-row.active { background: rgba(45,212,191,.08); border-left: 3px solid var(--teal); padding-left: 13px; }
+.wl-info { flex: 1; min-width: 0; }
+.wl-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wl-meta { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+.mod-pill { padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; font-family: var(--mono); background: rgba(96,165,250,.15); color: var(--blue); flex-shrink: 0; }
+.wl-empty { padding: 40px; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* RIGHT */
+.right { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.detail-bar { padding: 10px 16px; background: var(--card2); border-bottom: 1px solid var(--border); flex-shrink: 0; display: none; }
+.detail-bar.show { display: block; }
+.detail-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.detail-field label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; display: block; margin-bottom: 2px; }
+.detail-field span { font-size: 13px; font-family: var(--mono); }
+
+.images-section { flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--card); display: none; max-height: 220px; overflow: hidden; flex-direction: column; }
+.images-section.show { display: flex; }
+.images-head { padding: 8px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.images-head h3 { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; flex: 1; }
+.folders-grid { display: flex; flex-direction: column; gap: 0; overflow-y: auto; flex: 1; }
+.folder-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .1s; user-select: none; }
+.folder-row:hover { background: var(--card2); }
+.folder-row.selected { background: rgba(45,212,191,.08); border-left: 3px solid var(--teal); padding-left: 13px; }
+.folder-icon { font-size: 18px; flex-shrink: 0; }
+.folder-info { flex: 1; min-width: 0; }
+.folder-name { font-size: 13px; font-weight: 600; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folder-count { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.folder-check { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; transition: all .15s; }
+.folder-row.selected .folder-check { border-color: var(--teal); background: var(--teal); color: #0f1117; }
+.no-samples-msg { padding: 16px; font-size: 12px; color: var(--yellow); font-family: var(--mono); line-height: 1.6; }
+
+.send-bar { padding: 10px 16px; background: var(--card2); border-bottom: 1px solid var(--border); display: none; align-items: center; gap: 12px; flex-shrink: 0; }
+.send-bar.show { display: flex; }
+.progress-wrap { flex: 1; }
+.progress-track { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.progress-fill { height: 100%; background: var(--teal); border-radius: 3px; width: 0%; transition: width .3s; }
+.progress-label { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.btn-send { padding: 9px 22px; border-radius: 6px; border: none; background: var(--teal); color: #0f1117; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; font-family: inherit; }
+.btn-send:disabled { opacity: .4; cursor: not-allowed; }
+
+.steps-row { padding: 8px 16px; display: flex; gap: 0; align-items: center; flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--card); }
+.step { display: flex; align-items: center; gap: 6px; }
+.step + .step::before { content: '──'; color: var(--border); font-size: 10px; margin: 0 6px; }
+.step-dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--muted); font-family: var(--mono); transition: all .2s; }
+.step-dot.run { border-color: var(--yellow); color: var(--yellow); animation: blink 1s infinite; }
+.step-dot.ok  { border-color: var(--green); background: rgba(74,222,128,.1); color: var(--green); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+.step-lbl { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+.log-wrap { flex: 1; overflow-y: auto; padding: 10px 16px; font-family: var(--mono); font-size: 12px; line-height: 1.8; }
+.ll { display: flex; gap: 10px; }
+.lt { color: var(--muted); flex-shrink: 0; }
+.lm.info    { color: var(--text); }
+.lm.success { color: var(--green); }
+.lm.error   { color: var(--red); }
+
+.empty-right { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; color: var(--muted); gap: 8px; }
+.empty-right svg { opacity: .2; }
+
+/* TABS */
+.tab-bar { display: flex; border-bottom: 1px solid var(--border); background: var(--card); flex-shrink: 0; }
+.tab-btn { flex: 1; padding: 10px 0; font-size: 12px; font-weight: 600; border: none; background: none; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; letter-spacing: .04em; transition: color .15s, border-color .15s; }
+.tab-btn.active { color: var(--teal); border-bottom-color: var(--teal); }
+.tab-btn:hover:not(.active) { color: var(--text); }
+
+/* MANUAL FORM */
+.manual-wrap { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.manual-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-top: 4px; }
+.manual-row { display: grid; gap: 8px; }
+.manual-row.col2 { grid-template-columns: 1fr 1fr; }
+.manual-row.col3 { grid-template-columns: 1fr 80px 80px; }
+.mf { display: flex; flex-direction: column; gap: 3px; }
+.mf label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.mf input, .mf select { background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 7px 10px; color: var(--text); font-size: 12px; font-family: var(--mono); outline: none; width: 100%; }
+.mf input:focus, .mf select:focus { border-color: var(--teal); }
+.mf select option { background: var(--card); }
+.btn-manual-send { margin-top: 4px; padding: 10px; border-radius: 6px; border: none; background: var(--teal); color: #0f1117; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; width: 100%; }
+.btn-manual-send:disabled { opacity: .4; cursor: not-allowed; }
+.manual-folder-label { font-size: 11px; color: var(--muted); padding: 8px 0 4px; }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- CONFIG MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>⚙️ Connection Settings</h2>
+      <button class="modal-close" onclick="closeConfig()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- MWL -->
+      <div class="cfg-block">
+        <div class="cfg-block-head" style="background:rgba(96,165,250,.08);border-bottom:1px solid var(--border)">
+          <div class="dot" style="background:var(--blue)"></div>
+          <span style="color:var(--blue)">Worklist (MWL)</span>
+        </div>
+        <div class="cfg-block-body">
+          <div class="cfg-field"><label>IP / Host</label><input id="mwl_host" value="localhost"></div>
+          <div class="cfg-field"><label>Port</label><input id="mwl_port" value="11115"></div>
+          <div class="cfg-field"><label>AE Title (Called)</label><input id="mwl_aet" value="WORKLIST"></div>
+        </div>
+      </div>
+
+      <!-- MPPS -->
+      <div class="cfg-block">
+        <div class="cfg-block-head" style="background:rgba(251,146,60,.08);border-bottom:1px solid var(--border)">
+          <div class="dot" style="background:var(--orange)"></div>
+          <span style="color:var(--orange)">MPPS</span>
+        </div>
+        <div class="cfg-block-body">
+          <div class="cfg-field"><label>IP / Host</label><input id="mpps_host" value="localhost"></div>
+          <div class="cfg-field"><label>Port</label><input id="mpps_port" value="11112"></div>
+          <div class="cfg-field"><label>AE Title (Called)</label><input id="mpps_aet" value="DCM4CHEE"></div>
+        </div>
+      </div>
+
+      <!-- STORE -->
+      <div class="cfg-block">
+        <div class="cfg-block-head" style="background:rgba(167,139,250,.08);border-bottom:1px solid var(--border)">
+          <div class="dot" style="background:var(--purple)"></div>
+          <span style="color:var(--purple)">C-STORE (PACS)</span>
+        </div>
+        <div class="cfg-block-body">
+          <div class="cfg-field"><label>IP / Host</label><input id="store_host" value="localhost"></div>
+          <div class="cfg-field"><label>Port</label><input id="store_port" value="11112"></div>
+          <div class="cfg-field"><label>AE Title (Called)</label><input id="store_aet" value="DCM4CHEE"></div>
+        </div>
+      </div>
+
+      <!-- Calling AET (shared) -->
+      <div class="cfg-block">
+        <div class="calling-row">
+          <label>Calling AET (this emulator):</label>
+          <input id="callingAet" value="EMULATOR_SCU">
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeConfig()">Cancel</button>
+      <button class="btn-save" onclick="saveConfig()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <span class="topbar-logo">🔬</span>
+  <span class="topbar-title">DICOM Emulator</span>
+  <span class="topbar-sub">Modality Simulation</span>
+  <div class="spacer"></div>
+  <div class="conn-badges">
+    <span class="conn-badge mwl"  id="badgeMwl">MWL  localhost:11115</span>
+    <span class="conn-badge mpps" id="badgeMpps">MPPS localhost:11112</span>
+    <span class="conn-badge store" id="badgeStore">STORE localhost:11112</span>
+  </div>
+  <button class="btn-config" onclick="openConfig()">⚙ Settings</button>
+</div>
+
+<div class="body">
+  <!-- LEFT -->
+  <div class="left">
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tabWl" onclick="switchTab('wl')">📋 Worklist (MWL)</button>
+      <button class="tab-btn" id="tabManual" onclick="switchTab('manual')">✏️ Manual Entry</button>
+    </div>
+
+    <!-- WORKLIST TAB -->
+    <div id="panelWl" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+      <div class="section-head">
+        <span id="wlBadge" style="font-size:11px;color:var(--muted);font-family:var(--mono)">0 items</span>
+        <button class="btn-sm btn-refresh" onclick="loadWorklist()">⟳ Refresh</button>
+      </div>
+      <div class="filters">
+        <input id="fToday" type="date" style="width:140px">
+        <input id="fName" placeholder="Patient name…" style="flex:1">
+        <input id="fAcc" placeholder="Accession…" style="width:120px">
+      </div>
+      <div class="wl-list" id="wlList">
+        <div class="wl-empty">Loading worklist…</div>
+      </div>
+    </div>
+
+    <!-- MANUAL TAB -->
+    <div id="panelManual" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+      <div class="manual-wrap">
+        <div class="manual-section-label">Patient Information</div>
+        <div class="manual-row col2">
+          <div class="mf"><label>Patient Name</label><input id="mPatientName" placeholder="LASTNAME^FIRSTNAME"></div>
+          <div class="mf"><label>Patient ID</label><input id="mPatientId" placeholder="PID-001"></div>
+        </div>
+        <div class="manual-row col3">
+          <div class="mf"><label>Birth Date</label><input id="mBirthDate" type="date"></div>
+          <div class="mf"><label>Sex</label>
+            <select id="mSex">
+              <option value="">-</option>
+              <option value="M">M</option>
+              <option value="F">F</option>
+              <option value="O">O</option>
+            </select>
+          </div>
+          <div class="mf"><label>Modality</label>
+            <select id="mModality">
+              <option value="CT">CT</option>
+              <option value="MR">MR</option>
+              <option value="CR">CR</option>
+              <option value="DX">DX</option>
+              <option value="US">US</option>
+              <option value="XA">XA</option>
+              <option value="PT">PT</option>
+              <option value="NM">NM</option>
+              <option value="MG">MG</option>
+              <option value="RF">RF</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="manual-section-label" style="margin-top:6px">Study Information</div>
+        <div class="manual-row col2">
+          <div class="mf"><label>Accession Number</label><input id="mAccession" placeholder="ACC-2024-0001"></div>
+          <div class="mf"><label>Requested Procedure ID</label><input id="mProcedureId" placeholder="PROC-001"></div>
+        </div>
+        <div class="manual-row">
+          <div class="mf"><label>Study Description</label><input id="mDescription" placeholder="e.g. CT Chest with contrast"></div>
+        </div>
+
+        <div class="manual-section-label" style="margin-top:6px">Sample Folder</div>
+        <div id="manualFolderList" style="display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden">
+          <div class="no-samples-msg">Loading folders…</div>
+        </div>
+
+        <button class="btn-manual-send" id="btnManualSend" onclick="doManualEmulate()">▶ Send to PACS</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right">
+    <div class="detail-bar" id="detailBar">
+      <div class="detail-grid">
+        <div class="detail-field"><label>Patient Name</label><span id="dName">-</span></div>
+        <div class="detail-field"><label>Patient ID</label><span id="dId">-</span></div>
+        <div class="detail-field"><label>Accession</label><span id="dAcc">-</span></div>
+        <div class="detail-field"><label>Modality / Date</label><span id="dMod">-</span></div>
+      </div>
+    </div>
+
+    <div class="images-section" id="imagesSection">
+      <div class="images-head">
+        <h3>📁 Sample Folders</h3>
+        <span class="sel-count" id="selCount">none selected</span>
+      </div>
+      <div class="folders-grid" id="foldersGrid">
+        <div class="no-samples-msg">Loading…</div>
+      </div>
+    </div>
+
+    <div class="send-bar" id="sendBar">
+      <div class="progress-wrap">
+        <div class="progress-label" id="progressLabel">Ready to send</div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+      <button class="btn-send" id="btnSend" onclick="doEmulate()">▶ Send to PACS</button>
+    </div>
+
+    <div id="rightEmpty" class="empty-right">
+      <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2"
+          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+      </svg>
+      <p id="emptyMsg">Select a worklist item or fill in manual entry</p>
+    </div>
+
+    <div id="rightMain" style="display:none;flex:1;flex-direction:column;overflow:hidden">
+      <div class="steps-row">
+        <div class="step"><div class="step-dot" id="s1">1</div><span class="step-lbl">MPPS IN PROGRESS</span></div>
+        <div class="step"><div class="step-dot" id="s2">2</div><span class="step-lbl">C-STORE</span></div>
+        <div class="step"><div class="step-dot" id="s3">3</div><span class="step-lbl">MPPS COMPLETED</span></div>
+      </div>
+      <div class="log-wrap" id="logWrap"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let allItems = [];
+let selectedItem = null;
+let selectedFolder = null;
+let selectedManualFolder = null;
+let availableFolders = [];
+let activeTab = 'wl';
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('tabWl').classList.toggle('active', tab === 'wl');
+  document.getElementById('tabManual').classList.toggle('active', tab === 'manual');
+  document.getElementById('panelWl').style.display = tab === 'wl' ? 'flex' : 'none';
+  document.getElementById('panelManual').style.display = tab === 'manual' ? 'flex' : 'none';
+  if (tab === 'manual') buildManualFolders();
+}
+
+function buildManualFolders() {
+  const grid = document.getElementById('manualFolderList');
+  grid.innerHTML = '<div class="no-samples-msg">Loading…</div>';
+  fetch('/api/folders').then(r => r.json()).then(data => {
+    availableFolders = data.folders || [];
+    renderManualFolders();
+  }).catch(() => {
+    availableFolders = [];
+    renderManualFolders();
+  });
+}
+
+function renderManualFolders() {
+  const grid = document.getElementById('manualFolderList');
+  grid.innerHTML = '';
+  if (availableFolders.length === 0) {
+    grid.innerHTML = `<div class="no-samples-msg">⚠ No sample folders found.<br>Create a folder inside <code>samples/</code> and put .dcm files in it.</div>`;
+    return;
+  }
+  availableFolders.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'folder-row' + (selectedManualFolder === f.folder ? ' selected' : '');
+    row.innerHTML = `
+      <span class="folder-icon">📁</span>
+      <div class="folder-info">
+        <div class="folder-name">${esc(f.folder)}</div>
+        <div class="folder-count">${f.count} DICOM file${f.count !== 1 ? 's' : ''}</div>
+      </div>
+      <div class="folder-check">${selectedManualFolder === f.folder ? '✓' : ''}</div>
+    `;
+    row.onclick = () => {
+      selectedManualFolder = f.folder;
+      renderManualFolders();
+    };
+    grid.appendChild(row);
+  });
+}
+
+function getManualStudy() {
+  const raw = document.getElementById('mBirthDate').value;
+  return {
+    patientName:        document.getElementById('mPatientName').value.trim(),
+    patientId:          document.getElementById('mPatientId').value.trim(),
+    patientBirthDate:   raw ? raw.replace(/-/g, '') : '',
+    patientSex:         document.getElementById('mSex').value,
+    modality:           document.getElementById('mModality').value,
+    accessionNumber:    document.getElementById('mAccession').value.trim(),
+    requestedProcedureId: document.getElementById('mProcedureId').value.trim(),
+    studyDescription:   document.getElementById('mDescription').value.trim(),
+    scheduledStepId:    document.getElementById('mProcedureId').value.trim(),
+  };
+}
+
+async function doManualEmulate() {
+  const study = getManualStudy();
+  if (!study.patientName) { alert('Patient Name is required.'); return; }
+  if (!study.patientId)   { alert('Patient ID is required.'); return; }
+  if (!study.accessionNumber) { alert('Accession Number is required.'); return; }
+  if (!selectedManualFolder) { alert('Please select a sample folder.'); return; }
+
+  document.getElementById('btnManualSend').disabled = true;
+  document.getElementById('progressLabel').textContent = 'Starting…';
+  document.getElementById('progressFill').style.width = '0%';
+
+  document.getElementById('detailBar').classList.add('show');
+  document.getElementById('sendBar').classList.add('show');
+  document.getElementById('rightEmpty').style.display = 'none';
+  document.getElementById('dName').textContent = study.patientName;
+  document.getElementById('dId').textContent   = study.patientId;
+  document.getElementById('dAcc').textContent  = study.accessionNumber;
+  document.getElementById('dMod').textContent  = study.modality + ' · Manual';
+
+  await fetch('/api/emulate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      connMpps:  { ...cfg.mpps,  callingAet: cfg.callingAet },
+      connStore: { ...cfg.store, callingAet: cfg.callingAet },
+      study,
+      folder: selectedManualFolder,
+    }),
+  });
+}
+
+// CONFIG stored in memory (persists per session via localStorage)
+let cfg = loadCfg();
+
+function loadCfg() {
+  try { return JSON.parse(localStorage.getItem('dicom_cfg')) || defaultCfg(); }
+  catch { return defaultCfg(); }
+}
+function defaultCfg() {
+  return {
+    mwl:  { host: 'localhost', port: '11115', aet: 'WORKLIST' },
+    mpps: { host: 'localhost', port: '11112', aet: 'DCM4CHEE' },
+    store:{ host: 'localhost', port: '11112', aet: 'DCM4CHEE' },
+    callingAet: 'EMULATOR_SCU',
+  };
+}
+function saveCfg() {
+  localStorage.setItem('dicom_cfg', JSON.stringify(cfg));
+}
+
+function openConfig() {
+  document.getElementById('mwl_host').value  = cfg.mwl.host;
+  document.getElementById('mwl_port').value  = cfg.mwl.port;
+  document.getElementById('mwl_aet').value   = cfg.mwl.aet;
+  document.getElementById('mpps_host').value = cfg.mpps.host;
+  document.getElementById('mpps_port').value = cfg.mpps.port;
+  document.getElementById('mpps_aet').value  = cfg.mpps.aet;
+  document.getElementById('store_host').value= cfg.store.host;
+  document.getElementById('store_port').value= cfg.store.port;
+  document.getElementById('store_aet').value = cfg.store.aet;
+  document.getElementById('callingAet').value= cfg.callingAet;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeConfig() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+function saveConfig() {
+  cfg.mwl.host   = document.getElementById('mwl_host').value;
+  cfg.mwl.port   = document.getElementById('mwl_port').value;
+  cfg.mwl.aet    = document.getElementById('mwl_aet').value;
+  cfg.mpps.host  = document.getElementById('mpps_host').value;
+  cfg.mpps.port  = document.getElementById('mpps_port').value;
+  cfg.mpps.aet   = document.getElementById('mpps_aet').value;
+  cfg.store.host = document.getElementById('store_host').value;
+  cfg.store.port = document.getElementById('store_port').value;
+  cfg.store.aet  = document.getElementById('store_aet').value;
+  cfg.callingAet = document.getElementById('callingAet').value;
+  saveCfg();
+  updateBadges();
+  closeConfig();
+  loadWorklist();
+}
+function updateBadges() {
+  document.getElementById('badgeMwl').textContent   = `MWL   ${cfg.mwl.host}:${cfg.mwl.port}`;
+  document.getElementById('badgeMpps').textContent  = `MPPS  ${cfg.mpps.host}:${cfg.mpps.port}`;
+  document.getElementById('badgeStore').textContent = `STORE ${cfg.store.host}:${cfg.store.port}`;
+}
+
+// SSE
+const es = new EventSource('/api/events');
+es.onmessage = (e) => {
+  const d = JSON.parse(e.data);
+  if (d.type === 'log') addLog(d.level, d.msg);
+  if (d.type === 'step') markStep(d.step);
+  if (d.type === 'progress') updateProgress(d.current, d.total);
+  if (d.type === 'start') { resetSteps(); showRightMain(); }
+  if (d.type === 'done') {
+    document.getElementById('btnSend').disabled = false;
+    document.getElementById('btnManualSend').disabled = false;
+    if (d.ok) document.getElementById('progressLabel').textContent = 'Done ✓';
+  }
+};
+
+// WORKLIST
+async function loadWorklist() {
+  document.getElementById('wlList').innerHTML = '<div class="wl-empty">Querying MWL…</div>';
+  const filters = {};
+  const date = document.getElementById('fToday').value;
+  if (date) filters.scheduledDate = date.replace(/-/g, '');
+  try {
+    const r = await fetch('/api/worklist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conn: { ...cfg.mwl, callingAet: cfg.callingAet }, filters }),
+    });
+    const data = await r.json();
+    if (data.ok) { allItems = data.items || []; renderList(); }
+    else document.getElementById('wlList').innerHTML = `<div class="wl-empty" style="color:var(--red)">Error: ${esc(data.error)}</div>`;
+  } catch {
+    document.getElementById('wlList').innerHTML = `<div class="wl-empty" style="color:var(--red)">Connection failed</div>`;
+  }
+}
+
+function renderList() {
+  const name = document.getElementById('fName').value.toLowerCase();
+  const acc  = document.getElementById('fAcc').value.toLowerCase();
+  const items = allItems.filter(i =>
+    (!name || i.patientName.toLowerCase().includes(name)) &&
+    (!acc  || i.accessionNumber.toLowerCase().includes(acc))
+  );
+  document.getElementById('wlBadge').textContent = items.length + ' items';
+  if (!items.length) {
+    document.getElementById('wlList').innerHTML = '<div class="wl-empty">No worklist items found</div>';
+    return;
+  }
+  document.getElementById('wlList').innerHTML = items.map(item => `
+    <div class="wl-row ${selectedItem?.accessionNumber === item.accessionNumber ? 'active' : ''}"
+         onclick="selectItem('${esc(item.accessionNumber)}')">
+      <div class="wl-info">
+        <div class="wl-name">${esc(item.patientName || '-')}</div>
+        <div class="wl-meta">${esc(item.patientId)} · ${esc(item.accessionNumber)} · ${formatDate(item.scheduledDate)}</div>
+      </div>
+      <span class="mod-pill">${esc(item.modality || '-')}</span>
+    </div>
+  `).join('');
+}
+
+function selectItem(accession) {
+  selectedItem = allItems.find(i => i.accessionNumber === accession);
+  if (!selectedItem) return;
+  renderList();
+  document.getElementById('dName').textContent = selectedItem.patientName || '-';
+  document.getElementById('dId').textContent   = selectedItem.patientId || '-';
+  document.getElementById('dAcc').textContent  = selectedItem.accessionNumber || '-';
+  document.getElementById('dMod').textContent  = (selectedItem.modality || '-') + ' · ' + formatDate(selectedItem.scheduledDate);
+  document.getElementById('detailBar').classList.add('show');
+  document.getElementById('imagesSection').classList.add('show');
+  document.getElementById('sendBar').classList.add('show');
+  document.getElementById('rightEmpty').style.display = 'none';
+  buildFolders();
+}
+
+// IMAGES
+async function buildFolders() {
+  const grid = document.getElementById('foldersGrid');
+  grid.innerHTML = '<div class="no-samples-msg">Loading…</div>';
+
+  try {
+    const r = await fetch('/api/folders');
+    const data = await r.json();
+    availableFolders = data.folders || [];
+  } catch { availableFolders = []; }
+
+  grid.innerHTML = '';
+
+  if (availableFolders.length === 0) {
+    grid.innerHTML = `<div class="no-samples-msg">⚠ No sample folders found.<br>Create a folder inside <code>samples/</code> and put .dcm files in it.<br>Example: <code>samples/study_01/img1.dcm</code></div>`;
+    updateSelCount();
+    return;
+  }
+
+  availableFolders.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'folder-row' + (selectedFolder === f.folder ? ' selected' : '');
+    row.innerHTML = `
+      <span class="folder-icon">📁</span>
+      <div class="folder-info">
+        <div class="folder-name">${esc(f.folder)}</div>
+        <div class="folder-count">${f.count} DICOM file${f.count !== 1 ? 's' : ''}</div>
+      </div>
+      <div class="folder-check">${selectedFolder === f.folder ? '✓' : ''}</div>
+    `;
+    row.onclick = () => selectFolder(f.folder);
+    grid.appendChild(row);
+  });
+
+  updateSelCount();
+}
+
+function selectFolder(name) {
+  selectedFolder = name;
+  document.querySelectorAll('.folder-row').forEach(r => {
+    const isThis = r.querySelector('.folder-name').textContent === name;
+    r.classList.toggle('selected', isThis);
+    r.querySelector('.folder-check').textContent = isThis ? '✓' : '';
+  });
+  updateSelCount();
+}
+
+function updateSelCount() {
+  const el = document.getElementById('selCount');
+  if (selectedFolder) {
+    const f = availableFolders.find(x => x.folder === selectedFolder);
+    el.textContent = f ? `${f.folder} (${f.count} files)` : selectedFolder;
+    el.style.color = 'var(--teal)';
+  } else {
+    el.textContent = 'none selected';
+    el.style.color = 'var(--muted)';
+  }
+}
+
+// EMULATE
+async function doEmulate() {
+  if (!selectedItem) return;
+  if (!selectedFolder) { alert('Please select a sample folder first.'); return; }
+  document.getElementById('btnSend').disabled = true;
+  document.getElementById('progressLabel').textContent = 'Starting…';
+  document.getElementById('progressFill').style.width = '0%';
+  await fetch('/api/emulate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      connMpps:  { ...cfg.mpps,  callingAet: cfg.callingAet },
+      connStore: { ...cfg.store, callingAet: cfg.callingAet },
+      study: { ...selectedItem },
+      folder: selectedFolder,
+    }),
+  });
+}
+
+// LOG / STEPS
+function showRightMain() {
+  const el = document.getElementById('rightMain');
+  el.style.display = 'flex';
+  document.getElementById('logWrap').innerHTML = '';
+}
+function addLog(level, msg) {
+  const wrap = document.getElementById('logWrap');
+  const t = new Date().toTimeString().slice(0, 8);
+  const el = document.createElement('div');
+  el.className = 'll';
+  el.innerHTML = `<span class="lt">${t}</span><span class="lm ${level}">${esc(msg)}</span>`;
+  wrap.appendChild(el);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+function markStep(n) {
+  document.querySelectorAll('.step-dot').forEach(d => d.classList.remove('run'));
+  const el = document.getElementById('s' + n);
+  if (el) el.classList.add('run');
+}
+function updateProgress(cur, total) {
+  document.getElementById('progressFill').style.width = (cur / total * 100) + '%';
+  document.getElementById('progressLabel').textContent = `Storing ${cur} / ${total}`;
+  if (cur === total) { const s2 = document.getElementById('s2'); s2.classList.remove('run'); s2.classList.add('ok'); s2.textContent = '✓'; }
+  const s1 = document.getElementById('s1');
+  if (!s1.classList.contains('ok')) { s1.classList.remove('run'); s1.classList.add('ok'); s1.textContent = '✓'; }
+}
+function resetSteps() {
+  [1,2,3].forEach(n => { const el = document.getElementById('s'+n); el.className = 'step-dot'; el.textContent = n; });
+}
+
+// FILTERS
+document.getElementById('fName').addEventListener('input', renderList);
+document.getElementById('fAcc').addEventListener('input', renderList);
+document.getElementById('fToday').addEventListener('change', loadWorklist);
+document.getElementById('modalOverlay').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeConfig(); });
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function formatDate(d) { if (!d || d.length < 8) return d||'-'; return d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8); }
+
+// INIT
+updateBadges();
+document.getElementById('fToday').value = new Date().toISOString().slice(0,10);
+loadWorklist();
+</script>
+</body>
+</html>
