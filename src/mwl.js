@@ -2,10 +2,30 @@ const dcmjsDimse = require('dcmjs-dimse');
 const { Client, requests, Dataset } = dcmjsDimse;
 const { CFindRequest } = requests;
 
+const MAX_RESULTS = 2000;
+const QUERY_TIMEOUT_MS = 20000;
+const ABORT_GRACE_MS = 3000;
+
 async function queryWorklist(conn, filters = {}) {
   return new Promise((resolve, reject) => {
     const client = new Client();
     const results = [];
+    let settled = false;
+    let cancelled = false;
+    let timeoutTimer = null;
+    let abortTimer = null;
+
+    function stopTimers() {
+      clearTimeout(timeoutTimer);
+      clearTimeout(abortTimer);
+    }
+
+    function cancelQuery() {
+      if (cancelled) return;
+      cancelled = true;
+      client.cancel(request);
+      abortTimer = setTimeout(() => client.abort(), ABORT_GRACE_MS);
+    }
 
     const query = new Dataset({
       PatientID: filters.patientId || '',
@@ -36,13 +56,30 @@ async function queryWorklist(conn, filters = {}) {
       if (response.hasDataset()) {
         const ds = response.getDataset();
         const e = ds.elements || ds;
-        results.push(datasetToPlain(e));
+        const item = datasetToPlain(e);
+        results.push(item);
+        console.log(`[MWL] match #${results.length}: acc=${item.accessionNumber} patient=${item.patientId} sps=${item.scheduledStepId}`);
+        if (results.length >= MAX_RESULTS) cancelQuery();
+      } else {
+        console.log(`[MWL] response with no dataset, status=0x${response.getStatus().toString(16)}`);
       }
     });
 
     client.addRequest(request);
-    client.on('networkError', (err) => reject(err));
-    client.on('closed', () => resolve(results));
+    client.on('networkError', (err) => {
+      if (settled) return;
+      settled = true;
+      stopTimers();
+      reject(err);
+    });
+    client.on('closed', () => {
+      if (settled) return;
+      settled = true;
+      stopTimers();
+      resolve(results);
+    });
+
+    timeoutTimer = setTimeout(cancelQuery, QUERY_TIMEOUT_MS);
     client.send(conn.host, parseInt(conn.port), conn.callingAet, conn.calledAet);
   });
 }

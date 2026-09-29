@@ -569,9 +569,11 @@ async function loadWorklist() {
 function renderList() {
   const name = document.getElementById('fName').value.toLowerCase();
   const acc  = document.getElementById('fAcc').value.toLowerCase();
+  const date = document.getElementById('fToday').value.replace(/-/g, '');
   const items = allItems.filter(i =>
     (!name || i.patientName.toLowerCase().includes(name)) &&
-    (!acc  || i.accessionNumber.toLowerCase().includes(acc))
+    (!acc  || i.accessionNumber.toLowerCase().includes(acc)) &&
+    (!date || i.scheduledDate === date)
   );
   document.getElementById('wlBadge').textContent = items.length + ' items';
   if (!items.length) {
@@ -717,7 +719,7 @@ function resetSteps() {
 // FILTERS
 document.getElementById('fName').addEventListener('input', renderList);
 document.getElementById('fAcc').addEventListener('input', renderList);
-document.getElementById('fToday').addEventListener('change', loadWorklist);
+document.getElementById('fToday').addEventListener('change', renderList);
 document.getElementById('modalOverlay').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeConfig(); });
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
